@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    networks:
+      - app-network
+
+  backend:
+    build: ./backend
+    ports:
+      - "5001:5000"
+    networks:
+      - app-network
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_NAME: airflowdb
+      DB_USER: airflowuser
+      DB_PASS: airflowpass
+      DB_PORT: 5432
+
+  db:
+    image: postgres:13
+    restart: always
+    environment:
+      POSTGRES_USER: airflowuser
+      POSTGRES_PASSWORD: airflowpass
+      POSTGRES_DB: airflowdb
+    volumes:
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    networks:
+      - app-network
+
+  airflow-db:
+    image: postgres:13
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    networks:
+      - app-network
+
+  airflow-webserver:
+    image: apache/airflow:2.7.3
+    depends_on:
+      - airflow-scheduler
+      - airflow-db
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: 'my_fernet_key_123'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: Europe/Istanbul
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./backend/data:/opt/airflow/backend/data
+    ports:
+      - "8081:8080"
+    networks:
+      - app-network
+    command: webserver
+
+  airflow-scheduler:
+    image: apache/airflow:2.7.3
+    depends_on:
+      - airflow-db
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./backend/data:/opt/airflow/backend/data
+    networks:
+      - app-network
+    command: scheduler
+
+networks:
+  app-network:
+    driver: bridge
